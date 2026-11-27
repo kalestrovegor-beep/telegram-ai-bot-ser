@@ -7,23 +7,11 @@ import pandas as pd
 import telebot
 from telebot import types
 
-# Токен можно вписать сюда или указать в настройках Render (Environment Variables)
-TOKEN = os.environ.get("TOKEN", "ВАШ_НОВЫЙ_ТОКЕН_БОТА")
+TOKEN = os.environ.get("TOKEN", "ВАШ_ТОКЕН_БОТА").strip()
+RENDER_URL = "https://onrender.com"
 
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(TOKEN, threaded=False)
 users = {}
-
-# Мини-сервер для бесплатного тарифа Render
-class PingHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is alive!")
-
-def run_web_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), PingHandler)
-    server.serve_forever()
 
 def get_user(user_id):
     if user_id not in users:
@@ -148,7 +136,7 @@ def cmd_table(message):
         return
     try:
         lines = [line.split(";") for line in raw_text.split("\n") if line.strip()]
-        df = pd.DataFrame(lines[1:], columns=lines)
+        df = pd.DataFrame(lines[1:], columns=lines[0])
         file_path = f"table_{message.from_user.id}.xlsx"
         df.to_excel(file_path, index=False)
         with open(file_path, "rb") as f:
@@ -177,8 +165,32 @@ def cmd_expenses(message):
     with open(file_path, "rb") as f:
         bot.send_document(message.chat.id, f, caption="💰 Шаблон расходов")
 
+# Веб-сервер для приема сообщений напрямую от Telegram (Webhook)
+class WebhookHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def do_POST(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length).decode('utf-8')
+        update = telebot.types.Update.de_json(post_data)
+        bot.process_new_updates([update])
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
 if __name__ == "__main__":
-    threading.Thread(target=run_web_server, daemon=True).start()
     threading.Thread(target=passive_worker, daemon=True).start()
     bot.remove_webhook()
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    time.sleep(1)
+    bot.set_webhook(url=f"{RENDER_URL}/")
+    print("Webhook успешно установлен на", RENDER_URL, flush=True)
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), WebhookHandler)
+    server.serve_forever()
