@@ -8,7 +8,7 @@ import telebot
 from telebot import types
 
 TOKEN = os.environ.get("TOKEN", "ВАШ_ТОКЕН_БОТА").strip()
-RENDER_URL = "https://onrender.com"
+RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 bot = telebot.TeleBot(TOKEN, threaded=False)
 users = {}
